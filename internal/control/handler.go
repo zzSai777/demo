@@ -45,6 +45,18 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.writeJSON(w, http.StatusOK, h.store.ListUpdatePlans())
 	case path == "/updates" && r.Method == http.MethodPost:
 		h.handleCreateUpdatePlan(w, r)
+	case path == "/versions" && r.Method == http.MethodGet:
+		h.writeJSON(w, http.StatusOK, h.store.ListServiceVersions())
+	case path == "/versions" && r.Method == http.MethodPost:
+		h.handleCreateServiceVersion(w, r)
+	case path == "/releases" && r.Method == http.MethodGet:
+		h.writeJSON(w, http.StatusOK, h.store.ListReleases())
+	case path == "/releases" && r.Method == http.MethodPost:
+		h.handleCreateRelease(w, r)
+	case path == "/rollbacks" && r.Method == http.MethodGet:
+		h.writeJSON(w, http.StatusOK, h.store.ListRollbacks())
+	case path == "/rollbacks" && r.Method == http.MethodPost:
+		h.handleCreateRollback(w, r)
 	case path == "/nodes" && r.Method == http.MethodGet:
 		h.writeJSON(w, http.StatusOK, h.store.ListNodes())
 	default:
@@ -118,6 +130,55 @@ func (h *Handler) handleCreateUpdatePlan(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	h.writeJSON(w, http.StatusCreated, h.store.CreateUpdatePlan(plan))
+}
+
+func (h *Handler) handleCreateServiceVersion(w http.ResponseWriter, r *http.Request) {
+	var version ServiceVersion
+	if err := json.NewDecoder(r.Body).Decode(&version); err != nil {
+		h.writeError(w, http.StatusBadRequest, "invalid version payload")
+		return
+	}
+	if version.Service == "" || version.Version == "" || version.Artifact == "" {
+		h.writeError(w, http.StatusBadRequest, "service, version, and artifact are required")
+		return
+	}
+	h.writeJSON(w, http.StatusCreated, h.store.CreateServiceVersion(version))
+}
+
+func (h *Handler) handleCreateRelease(w http.ResponseWriter, r *http.Request) {
+	var release Release
+	if err := json.NewDecoder(r.Body).Decode(&release); err != nil {
+		h.writeError(w, http.StatusBadRequest, "invalid release payload")
+		return
+	}
+	if release.Service == "" || release.Version == "" {
+		h.writeError(w, http.StatusBadRequest, "service and version are required")
+		return
+	}
+	created, err := h.store.CreateRelease(release)
+	if err != nil {
+		h.writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	h.writeJSON(w, http.StatusCreated, created)
+}
+
+func (h *Handler) handleCreateRollback(w http.ResponseWriter, r *http.Request) {
+	var rollback Rollback
+	if err := json.NewDecoder(r.Body).Decode(&rollback); err != nil {
+		h.writeError(w, http.StatusBadRequest, "invalid rollback payload")
+		return
+	}
+	if rollback.Service == "" || rollback.TargetVersion == "" {
+		h.writeError(w, http.StatusBadRequest, "service and target_version are required")
+		return
+	}
+	created, err := h.store.CreateRollback(rollback)
+	if err != nil {
+		h.writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	h.writeJSON(w, http.StatusCreated, created)
 }
 
 func (h *Handler) handleServiceAction(w http.ResponseWriter, r *http.Request, path string) {

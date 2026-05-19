@@ -54,3 +54,33 @@ type UpdatePlan struct {
 	Status      string    `json:"status"`
 	RequestedAt time.Time `json:"requested_at"`
 }
+
+type ServiceVersion struct {
+	ID        string    `json:"id"`
+	Service   string    `json:"service"`
+	Version   string    `json:"version"`
+	Artifact  string    `json:"artifact"`
+	Checksum  string    `json:"checksum,omitempty"`
+	Status    string    `json:"status"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+type Release struct {
+	ID              string    `json:"id"`
+	Service         string    `json:"service"`
+	Version         string    `json:"version"`
+	PreviousVersion string    `json:"previous_version,omitempty"`
+	Strategy        string    `json:"strategy"`
+	Status          string    `json:"status"`
+	CreatedAt       time.Time `json:"created_at"`
+}
+
+type Rollback struct {
+	ID            string    `json:"id"`
+	Service       string    `json:"service"`
+	TargetVersion string    `json:"target_version"`
+	FromVersion   string    `json:"from_version,omitempty"`
+	Reason        string    `json:"reason,omitempty"`
+	Status        string    `json:"status"`
+	CreatedAt     time.Time `json:"created_at"`
+}

@@ -64,3 +64,44 @@ func TestControlHandlerCreatesABTestAndGrayRollout(t *testing.T) {
 		t.Fatalf("expected rollout strategy in response, got %s", rolloutRec.Body.String())
 	}
 }
+
+func TestControlHandlerManagesServiceVersionsReleaseAndRollback(t *testing.T) {
+	store := NewMemoryStore()
+	handler := NewHandler(store)
+
+	versionReq := httptest.NewRequest(http.MethodPost, "/control/v1/versions", strings.NewReader(`{"service":"gameplay-service","version":"v1.2.3","artifact":"registry/gameplay:v1.2.3","checksum":"sha256:abc"}`))
+	versionReq.Header.Set("Content-Type", "application/json")
+	versionRec := httptest.NewRecorder()
+	handler.ServeHTTP(versionRec, versionReq)
+
+	if versionRec.Code != http.StatusCreated {
+		t.Fatalf("expected version create status %d, got %d: %s", http.StatusCreated, versionRec.Code, versionRec.Body.String())
+	}
+	if !strings.Contains(versionRec.Body.String(), `"version":"v1.2.3"`) {
+		t.Fatalf("expected version in response, got %s", versionRec.Body.String())
+	}
+
+	releaseReq := httptest.NewRequest(http.MethodPost, "/control/v1/releases", strings.NewReader(`{"service":"gameplay-service","version":"v1.2.3","strategy":"rolling"}`))
+	releaseReq.Header.Set("Content-Type", "application/json")
+	releaseRec := httptest.NewRecorder()
+	handler.ServeHTTP(releaseRec, releaseReq)
+
+	if releaseRec.Code != http.StatusCreated {
+		t.Fatalf("expected release create status %d, got %d: %s", http.StatusCreated, releaseRec.Code, releaseRec.Body.String())
+	}
+	if !strings.Contains(releaseRec.Body.String(), `"status":"released"`) {
+		t.Fatalf("expected released status in response, got %s", releaseRec.Body.String())
+	}
+
+	rollbackReq := httptest.NewRequest(http.MethodPost, "/control/v1/rollbacks", strings.NewReader(`{"service":"gameplay-service","target_version":"dev","reason":"bad release"}`))
+	rollbackReq.Header.Set("Content-Type", "application/json")
+	rollbackRec := httptest.NewRecorder()
+	handler.ServeHTTP(rollbackRec, rollbackReq)
+
+	if rollbackRec.Code != http.StatusCreated {
+		t.Fatalf("expected rollback create status %d, got %d: %s", http.StatusCreated, rollbackRec.Code, rollbackRec.Body.String())
+	}
+	if !strings.Contains(rollbackRec.Body.String(), `"target_version":"dev"`) {
+		t.Fatalf("expected rollback target version in response, got %s", rollbackRec.Body.String())
+	}
+}

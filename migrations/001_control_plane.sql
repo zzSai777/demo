@@ -48,6 +48,41 @@ CREATE TABLE IF NOT EXISTS control_update_plans (
   KEY idx_update_service_status (service_name, status)
 );
 
+CREATE TABLE IF NOT EXISTS control_service_versions (
+  id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  service_name VARCHAR(128) NOT NULL,
+  version VARCHAR(128) NOT NULL,
+  artifact VARCHAR(512) NOT NULL,
+  checksum VARCHAR(191) NULL,
+  status VARCHAR(32) NOT NULL DEFAULT 'available',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_service_version (service_name, version),
+  KEY idx_version_service_status (service_name, status)
+);
+
+CREATE TABLE IF NOT EXISTS control_releases (
+  id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  service_name VARCHAR(128) NOT NULL,
+  version VARCHAR(128) NOT NULL,
+  previous_version VARCHAR(128) NULL,
+  strategy VARCHAR(64) NOT NULL DEFAULT 'rolling',
+  status VARCHAR(32) NOT NULL DEFAULT 'released',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_release_service_created (service_name, created_at),
+  KEY idx_release_service_status (service_name, status)
+);
+
+CREATE TABLE IF NOT EXISTS control_rollbacks (
+  id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  service_name VARCHAR(128) NOT NULL,
+  target_version VARCHAR(128) NOT NULL,
+  from_version VARCHAR(128) NULL,
+  reason VARCHAR(512) NULL,
+  status VARCHAR(32) NOT NULL DEFAULT 'rolled_back',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_rollback_service_created (service_name, created_at)
+);
+
 CREATE TABLE IF NOT EXISTS control_node_loads (
   node_id VARCHAR(128) NOT NULL PRIMARY KEY,
   service_name VARCHAR(128) NOT NULL,

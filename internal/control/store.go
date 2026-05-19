@@ -19,17 +19,26 @@ type Store interface {
 	ListNodes() []NodeLoad
 	CreateUpdatePlan(plan UpdatePlan) UpdatePlan
 	ListUpdatePlans() []UpdatePlan
+	CreateServiceVersion(version ServiceVersion) ServiceVersion
+	ListServiceVersions() []ServiceVersion
+	CreateRelease(release Release) (Release, error)
+	ListReleases() []Release
+	CreateRollback(rollback Rollback) (Rollback, error)
+	ListRollbacks() []Rollback
 }
 
 type MemoryStore struct {
-	mu       sync.RWMutex
-	configs  map[string]ConfigEntry
-	abTests  []ABTest
-	rollouts []Rollout
-	services map[string]ServiceState
-	nodes    []NodeLoad
-	updates  []UpdatePlan
-	nextID   int64
+	mu        sync.RWMutex
+	configs   map[string]ConfigEntry
+	abTests   []ABTest
+	rollouts  []Rollout
+	services  map[string]ServiceState
+	nodes     []NodeLoad
+	updates   []UpdatePlan
+	versions  []ServiceVersion
+	releases  []Release
+	rollbacks []Rollback
+	nextID    int64
 }
 
 func NewMemoryStore() *MemoryStore {
@@ -183,6 +192,87 @@ func (s *MemoryStore) ListUpdatePlans() []UpdatePlan {
 	plans := make([]UpdatePlan, len(s.updates))
 	copy(plans, s.updates)
 	return plans
+}
+
+func (s *MemoryStore) CreateServiceVersion(version ServiceVersion) ServiceVersion {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	version.ID = s.nextIDString("version")
+	version.Status = defaultString(version.Status, "available")
+	version.CreatedAt = time.Now().UTC()
+	s.versions = append(s.versions, version)
+	return version
+}
+
+func (s *MemoryStore) ListServiceVersions() []ServiceVersion {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	versions := make([]ServiceVersion, len(s.versions))
+	copy(versions, s.versions)
+	return versions
+}
+
+func (s *MemoryStore) CreateRelease(release Release) (Release, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	service, ok := s.services[release.Service]
+	if !ok {
+		return Release{}, fmt.Errorf("service %q not found", release.Service)
+	}
+	release.ID = s.nextIDString("release")
+	release.PreviousVersion = service.Version
+	release.Strategy = defaultString(release.Strategy, "rolling")
+	release.Status = defaultString(release.Status, "released")
+	release.CreatedAt = time.Now().UTC()
+	s.releases = append(s.releases, release)
+
+	service.Version = release.Version
+	service.Status = "running"
+	service.UpdatedAt = release.CreatedAt
+	s.services[release.Service] = service
+	return release, nil
+}
+
+func (s *MemoryStore) ListReleases() []Release {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	releases := make([]Release, len(s.releases))
+	copy(releases, s.releases)
+	return releases
+}
+
+func (s *MemoryStore) CreateRollback(rollback Rollback) (Rollback, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	service, ok := s.services[rollback.Service]
+	if !ok {
+		return Rollback{}, fmt.Errorf("service %q not found", rollback.Service)
+	}
+	rollback.ID = s.nextIDString("rollback")
+	rollback.FromVersion = service.Version
+	rollback.Status = defaultString(rollback.Status, "rolled_back")
+	rollback.CreatedAt = time.Now().UTC()
+	s.rollbacks = append(s.rollbacks, rollback)
+
+	service.Version = rollback.TargetVersion
+	service.Status = "running"
+	service.UpdatedAt = rollback.CreatedAt
+	s.services[rollback.Service] = service
+	return rollback, nil
+}
+
+func (s *MemoryStore) ListRollbacks() []Rollback {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	rollbacks := make([]Rollback, len(s.rollbacks))
+	copy(rollbacks, s.rollbacks)
+	return rollbacks
 }
 
 func (s *MemoryStore) nextIDString(prefix string) string {

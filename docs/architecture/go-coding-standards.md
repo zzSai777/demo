@@ -8,7 +8,7 @@
 
 - 微服务进程。
 - 斗地主及后续玩法规则。
-- MySQL、Memcached、RPC、WebSocket、PB 消息协议等基础设施适配。
+- due、gRPC、PB、MySQL、Memcached、WebSocket 等基础设施适配。
 - 单元测试、集成测试和压测代码。
 
 ## Go 版本与基础工具
@@ -16,6 +16,7 @@
 要求：
 
 - 统一使用团队指定的 Go 稳定版本。
+- 内部微服务统一使用 due + gRPC + PB。
 - 所有代码必须通过 `gofmt`。
 - 提交前必须运行 `go test ./...`。
 - 服务代码必须通过 `go vet ./...`。
@@ -67,11 +68,11 @@ docs/
 
 目录职责：
 
-- `cmd/`：每个服务的启动入口，只做配置加载、依赖装配和启动。
+- `cmd/`：每个服务的启动入口，只做 due app 装配、配置加载、依赖装配和启动。
 - `internal/app/`：应用用例层，编排领域逻辑和基础设施。
 - `internal/domain/`：领域模型、领域服务、接口定义和核心规则。
 - `internal/infra/`：MySQL、Memcached、RPC、日志、指标等实现。
-- `internal/transport/`：HTTP、WebSocket、TCP、gRPC 等协议适配。
+- `internal/transport/`：due HTTP/gRPC、WebSocket、TCP 等协议适配。
 - `pkg/gamekit/`：可复用玩法框架能力，例如牌、牌组、规则接口。
 - `pkg/landlord/`：斗地主规则引擎。若不希望对外暴露，可放入 `internal/domain/game/landlord`。
 - `api/`：对外协议定义。
@@ -131,10 +132,10 @@ flowchart TB
 职责：
 
 - 加载配置。
-- 初始化日志、指标和链路追踪。
+- 初始化 due logger、metrics、tracing 和 middleware。
 - 初始化 MySQL、Memcached 和 RPC 客户端。
 - 装配 app service。
-- 启动 transport server。
+- 启动 due HTTP/gRPC server 或 gateway WebSocket server。
 - 监听系统信号并优雅退出。
 
 不允许：
@@ -369,6 +370,8 @@ room-service 只处理通用流程：
 ## API 与协议规范
 
 前端使用 Cocos Creator，客户端与 `gateway-service` 使用 WebSocket 长连接通信，业务协议使用 Protocol Buffers，简称 PB。客户端协议必须保持版本化。
+
+内部在线服务统一使用 due + gRPC + PB。due 负责 HTTP/gRPC transport、中间件、日志、指标、链路追踪、超时、恢复和错误转换；业务代码仍按 app/domain/infra 分层，不把业务规则写进 transport handler。
 
 要求：
 

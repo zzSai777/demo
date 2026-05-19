@@ -46,6 +46,12 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		err = runRollout(client, stdout, stderr, rest[1:])
 	case "update":
 		err = runUpdate(client, stdout, stderr, rest[1:])
+	case "version":
+		err = runVersion(client, stdout, stderr, rest[1:])
+	case "release":
+		err = runRelease(client, stdout, stderr, rest[1:])
+	case "rollback":
+		err = runRollback(client, stdout, stderr, rest[1:])
 	case "nodes":
 		err = client.get(stdout, "/control/v1/nodes")
 	default:
@@ -233,6 +239,68 @@ func runUpdate(client *Client, out, stderr io.Writer, args []string) error {
 	})
 }
 
+func runVersion(client *Client, out, stderr io.Writer, args []string) error {
+	if len(args) == 0 || args[0] == "list" {
+		return client.get(out, "/control/v1/versions")
+	}
+	if args[0] != "register" {
+		return fmt.Errorf("usage: gamectl version [list|register]")
+	}
+	flags := flag.NewFlagSet("version register", flag.ContinueOnError)
+	flags.SetOutput(stderr)
+	service := flags.String("service", "", "service name")
+	version := flags.String("version", "", "service version")
+	artifact := flags.String("artifact", "", "artifact URI")
+	checksum := flags.String("checksum", "", "artifact checksum")
+	if err := flags.Parse(args[1:]); err != nil {
+		return err
+	}
+	return client.postJSON(out, "/control/v1/versions", map[string]string{
+		"service":  *service,
+		"version":  *version,
+		"artifact": *artifact,
+		"checksum": *checksum,
+	})
+}
+
+func runRelease(client *Client, out, stderr io.Writer, args []string) error {
+	if len(args) == 0 || args[0] == "list" {
+		return client.get(out, "/control/v1/releases")
+	}
+	if args[0] != "deploy" {
+		return fmt.Errorf("usage: gamectl release [list|deploy]")
+	}
+	flags := flag.NewFlagSet("release deploy", flag.ContinueOnError)
+	flags.SetOutput(stderr)
+	service := flags.String("service", "", "service name")
+	version := flags.String("version", "", "target version")
+	strategy := flags.String("strategy", "rolling", "release strategy")
+	if err := flags.Parse(args[1:]); err != nil {
+		return err
+	}
+	return client.postJSON(out, "/control/v1/releases", map[string]string{
+		"service":  *service,
+		"version":  *version,
+		"strategy": *strategy,
+	})
+}
+
+func runRollback(client *Client, out, stderr io.Writer, args []string) error {
+	flags := flag.NewFlagSet("rollback", flag.ContinueOnError)
+	flags.SetOutput(stderr)
+	service := flags.String("service", "", "service name")
+	targetVersion := flags.String("target-version", "", "target version")
+	reason := flags.String("reason", "", "rollback reason")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	return client.postJSON(out, "/control/v1/rollbacks", map[string]string{
+		"service":        *service,
+		"target_version": *targetVersion,
+		"reason":         *reason,
+	})
+}
+
 func splitCSV(value string) []string {
 	parts := strings.Split(value, ",")
 	out := make([]string, 0, len(parts))
@@ -245,5 +313,5 @@ func splitCSV(value string) []string {
 }
 
 func printUsage(out io.Writer) {
-	fmt.Fprintln(out, "usage: gamectl [--addr URL] <status|service|config|abtest|rollout|update|nodes>")
+	fmt.Fprintln(out, "usage: gamectl [--addr URL] <status|service|config|abtest|rollout|update|version|release|rollback|nodes>")
 }

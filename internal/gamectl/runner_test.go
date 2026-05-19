@@ -59,3 +59,39 @@ func TestRunConfigSetSendsConfigPayload(t *testing.T) {
 		t.Fatalf("expected config payload, got %s", body)
 	}
 }
+
+func TestRunReleaseAndRollbackCommands(t *testing.T) {
+	var calls []string
+	var bodies []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		payload, _ := io.ReadAll(r.Body)
+		calls = append(calls, r.Method+" "+r.URL.Path)
+		bodies = append(bodies, string(payload))
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"status":"ok"}`))
+	}))
+	defer server.Close()
+
+	var out strings.Builder
+	releaseCode := Run([]string{"--addr", server.URL, "release", "deploy", "--service", "gameplay-service", "--version", "v1.2.3", "--strategy", "rolling"}, &out, &out)
+	rollbackCode := Run([]string{"--addr", server.URL, "rollback", "--service", "gameplay-service", "--target-version", "v1.2.2", "--reason", "bad release"}, &out, &out)
+
+	if releaseCode != 0 || rollbackCode != 0 {
+		t.Fatalf("expected release and rollback exit code 0, got %d/%d: %s", releaseCode, rollbackCode, out.String())
+	}
+	if len(calls) != 2 {
+		t.Fatalf("expected 2 calls, got %d", len(calls))
+	}
+	if calls[0] != "POST /control/v1/releases" {
+		t.Fatalf("expected release endpoint, got %q", calls[0])
+	}
+	if calls[1] != "POST /control/v1/rollbacks" {
+		t.Fatalf("expected rollback endpoint, got %q", calls[1])
+	}
+	if !strings.Contains(bodies[0], `"version":"v1.2.3"`) || !strings.Contains(bodies[0], `"strategy":"rolling"`) {
+		t.Fatalf("expected release payload, got %s", bodies[0])
+	}
+	if !strings.Contains(bodies[1], `"target_version":"v1.2.2"`) || !strings.Contains(bodies[1], `"reason":"bad release"`) {
+		t.Fatalf("expected rollback payload, got %s", bodies[1])
+	}
+}
