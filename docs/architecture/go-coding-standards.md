@@ -8,7 +8,7 @@
 
 - 微服务进程。
 - 斗地主及后续玩法规则。
-- MySQL、Memcached、RPC、消息协议等基础设施适配。
+- MySQL、Memcached、RPC、WebSocket、PB 消息协议等基础设施适配。
 - 单元测试、集成测试和压测代码。
 
 ## Go 版本与基础工具
@@ -368,7 +368,7 @@ room-service 只处理通用流程：
 
 ## API 与协议规范
 
-客户端协议应保持版本化。
+前端使用 Cocos Creator，客户端与 `gateway-service` 使用 WebSocket 长连接通信，业务协议使用 Protocol Buffers，简称 PB。客户端协议必须保持版本化。
 
 要求：
 
@@ -377,6 +377,28 @@ room-service 只处理通用流程：
 - 每个改变状态的请求具备去重能力。
 - 服务端响应包含明确错误码。
 - 推送事件包含递增序号，支持断线补偿。
+- Gateway 负责 WebSocket 连接管理、PB 封包拆包、鉴权、协议版本校验和路由。
+- 内部 domain 和 app 层不直接依赖 Cocos Creator。
+
+PB 规范：
+
+- `.proto` 文件放在 `api/proto/`。
+- 包名按领域拆分，例如 `auth`、`lobby`、`room`、`landlord`、`wallet`。
+- 字段只追加，不复用字段号。
+- 删除字段必须使用 `reserved` 保留字段号和字段名。
+- 所有消息必须携带协议版本或可从外层包头识别协议版本。
+- 金额、金币、时间戳等关键字段使用明确整数类型，不使用浮点数。
+- 客户端命令和服务端事件分开定义，避免同一消息双向复用导致兼容困难。
+
+WebSocket 外层封包建议字段：
+
+```text
+version
+request_id
+seq
+cmd
+payload
+```
 
 事件建议字段：
 

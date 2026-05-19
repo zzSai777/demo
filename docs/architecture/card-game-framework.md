@@ -6,6 +6,9 @@
 
 技术约束：
 
+- 前端引擎：Cocos Creator。
+- 客户端通信：WebSocket 长连接。
+- 客户端业务协议：Protocol Buffers，简称 PB。
 - 服务端语言：Go。
 - 持久化数据库：MySQL。
 - 缓存：Memcached。
@@ -20,6 +23,8 @@
 核心原则：
 
 - 网关无状态，支持水平扩展。
+- Cocos Creator 客户端只连接 gateway-service，不直接访问内部业务服务。
+- 客户端与 gateway-service 使用 WebSocket，业务消息使用 PB 编码。
 - 第一版合并部署，代码按领域模块化，避免过早拆分过多服务。
 - 房间状态单写者，同一房间同一时刻只由一个 gameplay 节点处理。
 - 玩法规则与房间生命周期解耦。
@@ -167,7 +172,7 @@
 
 ```mermaid
 flowchart LR
-  Client[Client] --> Gateway[gateway_service]
+  Client[Cocos_Creator_Client] -->|"WebSocket + PB"| Gateway[gateway_service]
   Gateway --> Platform[platform_service]
   Gateway --> Gameplay[gameplay_service]
   Platform --> MySQL[(MySQL)]
@@ -182,6 +187,76 @@ flowchart LR
   ControlAPI --> MySQL
   ControlAPI --> Memcached
 ```
+
+## 客户端与协议
+
+前端使用 Cocos Creator。客户端只与 `gateway-service` 建立 WebSocket 长连接，内部服务不暴露给客户端。
+
+协议要求：
+
+- 传输层使用 WebSocket。
+- 业务协议使用 Protocol Buffers，简称 PB。
+- 每个客户端消息包含 `request_id`、`cmd`、`seq`、`payload` 和协议版本。
+- `payload` 为具体业务 PB 消息，例如登录、进入大厅、匹配、叫地主、出牌、托管、断线重连。
+- 服务端推送事件包含 `event_id`、`seq`、`event_type`、`payload` 和 `server_time`。
+- Gateway 负责 WebSocket 连接管理、PB 封包拆包、协议版本校验、鉴权和路由。
+- Platform、Gameplay、Wallet 等内部服务只处理已经解析后的领域请求，不直接依赖 Cocos Creator。
+
+协议兼容策略：
+
+- PB 字段只追加不复用字段号。
+- 删除字段时保留 reserved 字段号和字段名。
+- 客户端和服务端都必须携带协议版本。
+- Gateway 根据客户端版本做兼容适配或拒绝过旧版本。
+- 关键命令必须支持幂等或去重，避免断线重连后重复操作。
+
+建议目录：
+
+```text
+api/proto/
+  common.proto
+  auth.proto
+  lobby.proto
+  match.proto
+  room.proto
+  landlord.proto
+  wallet.proto
+```
+
+## 服务连接方式与协议
+
+不同链路使用不同协议，避免把客户端协议、内部服务协议和运维控制面协议混在一起。
+
+| 连接 | 协议 / 方式 | 说明 |
+|---|---|---|
+| Cocos Creator -> `gateway-service` | WebSocket + PB | 客户端唯一入口，承载长连接、推送和断线重连。 |
+| `gateway-service` -> `platform-service` | gRPC + PB | 登录校验、大厅、配置、入场校验等请求响应型调用。 |
+| `gateway-service` -> `gameplay-service` | gRPC + PB 或内部长连接 RPC | 玩家命令路由到房间 owner，要求低延迟和明确超时。 |
+| `gameplay-service` -> `wallet-service` | gRPC + PB | 对局结算链路，必须携带 `idempotency_key`。 |
+| `gameplay-service` -> MySQL | MySQL TCP | 写房间摘要、关键事件、结算结果和 outbox。 |
+| `wallet-service` -> MySQL | MySQL TCP | 写资产账户、资产流水和结算幂等记录。 |
+| `platform-service` -> MySQL | MySQL TCP | 写用户、会话、配置和大厅相关权威数据。 |
+| `platform-service` -> Memcached | Memcached 协议 | 缓存用户资料、会话校验、配置和大厅聚合视图。 |
+| `record-worker` -> MySQL | MySQL TCP | 读取 outbox、关键事件和同步游标。 |
+| `record-worker` -> ClickHouse | ClickHouse HTTP 或 Native TCP | 批量写分析、回放和运营查询数据。 |
+| `gamectl` -> Control API | HTTP JSON | 运维 CLI 面向人工使用和调试，不使用 PB。 |
+| Control API -> MySQL | MySQL TCP | 配置、AB、灰度、服务状态和更新计划的权威写入。 |
+| Control API -> Memcached | Memcached 协议 | 刷新或删除配置、AB 和灰度规则缓存。 |
+
+协议结论：
+
+- 客户端链路使用 WebSocket + PB。
+- 内部在线服务链路默认使用 gRPC + PB。
+- 控制面链路使用 HTTP JSON。
+- 异步分析链路使用 MySQL outbox -> record-worker -> ClickHouse。
+- 缓存链路使用 Memcached，且只做缓存，不做事实存储。
+
+内部服务调用要求：
+
+- 所有 gRPC 请求必须携带 `request_id`、`trace_id`、`user_id` 和超时。
+- 任何会改变资产、房间或配置状态的请求必须携带幂等键或版本号。
+- 服务边界返回统一错误码，不暴露 SQL、堆栈和内部实现细节。
+- Gateway 负责把客户端 PB 消息转换为内部服务请求，内部服务不直接依赖 Cocos Creator。
 
 ## 多玩法模型
 
