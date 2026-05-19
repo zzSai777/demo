@@ -5,6 +5,8 @@ import (
 	"log"
 	"net/http"
 	"os"
+
+	"go-demo/internal/control"
 )
 
 func newServer() http.Handler {
@@ -15,6 +17,7 @@ func newServer() http.Handler {
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintln(w, "ok")
 	})
+	mux.Handle("/control/v1/", control.NewHandler(control.NewMemoryStore()))
 	return mux
 }
 
