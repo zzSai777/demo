@@ -586,6 +586,17 @@ Key 命名：
 
 ## 可观测性
 
+性能监控按 Metrics、Tracing、Logging、Profiling 和 Alerting 五层落地。不要只监控 CPU 和内存，棋牌游戏更重要的是玩家消息延迟、房间 actor 队列、结算成功率、断线重连和数据层延迟。
+
+推荐技术栈：
+
+- Metrics：Prometheus。
+- Dashboard：Grafana。
+- Tracing：OpenTelemetry + Jaeger 或 Tempo。
+- Logging：JSON 结构化日志 + Loki 或 ELK。
+- Profiling：Go pprof。
+- Alerting：Alertmanager。
+
 每个服务必须输出：
 
 - 结构化日志。
@@ -593,11 +604,111 @@ Key 命名：
 - 请求 ID 和链路 ID。
 - 关键业务事件。
 - 慢查询和慢 RPC。
+- pprof 调试入口，生产环境必须受访问控制保护。
+
+### 核心指标
+
+Gateway 指标：
+
+- 在线连接数。
+- WebSocket 建连数和断连数。
+- 消息收发 QPS。
+- PB 解码失败数。
+- 协议错误数。
+- 请求路由耗时。
+- 推送失败数。
+- 断线重连率。
+
+Gameplay 指标：
+
+- 当前房间数。
+- 当前对局中房间数。
+- 每秒开局数。
+- 每秒结束局数。
+- room actor 数。
+- actor mailbox 长度。
+- actor 消息处理耗时。
+- 玩家操作延迟。
+- 托管触发次数。
+- 房间恢复次数。
+- draining 节点上的剩余房间数。
+
+斗地主玩法指标：
+
+- 叫地主耗时。
+- 出牌响应耗时。
+- 非法出牌次数。
+- 超时出牌次数。
+- 结算耗时。
+
+Wallet 指标：
+
+- 结算请求 QPS。
+- 结算成功率和失败率。
+- 幂等命中次数。
+- MySQL 事务耗时。
+- 余额不足次数。
+- 重复结算拦截次数。
+
+Platform 指标：
+
+- 登录 QPS。
+- 登录失败率。
+- 大厅接口耗时。
+- 配置读取耗时。
+- Memcached 命中率。
+- 入场校验失败原因分布。
+
+数据层指标：
+
+- MySQL QPS/TPS、慢查询、连接池使用率、事务耗时、锁等待、主从延迟和错误数。
+- Memcached 命中率、get/set QPS、evictions、连接数和内存使用率。
+- ClickHouse 写入吞吐、写入失败数、查询耗时和同步延迟。
+
+### Trace 链路
+
+每条客户端请求进入 gateway 时生成或传递：
+
+- `trace_id`
+- `request_id`
+- `user_id`
+- `room_id`
+- `game_id`
+
+典型出牌链路需要能在 trace 中看到：
+
+```text
+WebSocket receive
+PB decode
+gateway route
+gameplay actor enqueue
+actor handle command
+landlord rule check
+broadcast event
+optional settlement
+```
+
+### SLI / SLO
+
+第一版建议先定义这些目标：
+
+| 指标 | 建议目标 |
+|---|---|
+| Gateway 消息转发 P99 | < 50ms |
+| 玩家出牌到广播 P99 | < 100ms |
+| 结算 P99 | < 300ms |
+| 登录 P99 | < 500ms |
+| 断线重连成功率 | > 99% |
+| 结算成功率 | > 99.99% |
+| 房间 actor mailbox P99 长度 | < 20 |
 
 关键告警：
 
 - Gateway 连接数异常。
+- Gateway 消息错误率升高。
 - Gameplay 节点房间数过高。
+- Gameplay actor mailbox 堆积。
+- Gameplay 房间消息处理 P99 升高。
 - 匹配等待时间过长。
 - 结算失败率升高。
 - MySQL 慢查询和连接池耗尽。
@@ -605,6 +716,12 @@ Key 命名：
 - ClickHouse 同步延迟升高。
 - 断线重连率异常。
 - CLI 控制面操作失败率升高。
+
+落地顺序：
+
+1. 第一阶段接入 Prometheus 指标、Grafana dashboard、结构化日志、pprof 和基础告警。
+2. 第二阶段接入 OpenTelemetry tracing、房间 actor 细粒度指标和业务 SLO 看板。
+3. 第三阶段按玩法、场次、版本、灰度组拆分指标，并支持自动扩容和异常房间检测。
 
 ## 安全与风控基础
 
